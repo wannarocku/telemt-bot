@@ -2,7 +2,7 @@
 set -e
 
 APP_DIR=/opt/telemt-bot
-SERVICE_USER=telemt-bot
+SERVICE_USER=telemt
 
 echo "=== Установка TeleMT-bot ==="
 
@@ -26,15 +26,18 @@ cd $APP_DIR
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
-# Конфиг
+# Создание .env, если его нет
 if [ ! -f .env ]; then
-    cp .env.example .env
-    echo "Отредактируйте $APP_DIR/.env и заполните токены"
+    cat <<EOF >.env
+TELEGRAM_TOKEN=
+ADMIN_ID=
+OTHER_SETTING=
+EOF
+    echo "Создан файл $APP_DIR/.env. Пожалуйста, заполните переменные перед запуском бота."
 fi
 
 # systemd unit
-if [ ! -f /etc/systemd/system/telemt-bot.service ]; then
-    cat <<EOF >/etc/systemd/system/telemt-bot.service
+cat <<EOF >/etc/systemd/system/telemt-bot.service
 [Unit]
 Description=teleMT Telegram Bot
 Wants=network-online.target
@@ -54,7 +57,6 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-fi
 
 systemctl daemon-reload
 systemctl enable telemt-bot
@@ -62,4 +64,3 @@ systemctl start telemt-bot
 systemctl status telemt-bot
 
 echo "=== Установка TeleMT-bot завершена ==="
-echo "Отредактируйте .env при необходимости"
