@@ -36,6 +36,14 @@ EOF
     echo "Создан файл $APP_DIR/.env. Пожалуйста, заполните переменные перед запуском бота."
 fi
 
+# Определяем Python-скрипт бота (берём первый *.py в папке)
+BOT_FILE=$(ls $APP_DIR | grep '\.py$' | head -n1)
+if [ -z "$BOT_FILE" ]; then
+    echo "Ошибка: не найден Python-скрипт бота (*.py) в $APP_DIR"
+    exit 1
+fi
+echo "Используем скрипт $BOT_FILE для запуска сервиса"
+
 # systemd unit
 cat <<EOF >/etc/systemd/system/telemt-bot.service
 [Unit]
@@ -50,7 +58,7 @@ Group=$SERVICE_USER
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$APP_DIR/.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=$APP_DIR/.venv/bin/python $APP_DIR/telemt_bot.py
+ExecStart=$APP_DIR/.venv/bin/python $APP_DIR/$BOT_FILE
 Restart=always
 RestartSec=5
 
@@ -60,7 +68,7 @@ EOF
 
 systemctl daemon-reload
 systemctl enable telemt-bot
-systemctl start telemt-bot
+systemctl restart telemt-bot
 systemctl status telemt-bot
 
 echo "=== Установка TeleMT-bot завершена ==="
