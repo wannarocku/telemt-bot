@@ -205,21 +205,55 @@ def format_stats_message(payload: dict, http_status: int) -> str:
         f"HTTP: <code>{http_status}</code>",
     ]
 
-    data = payload.get("data")
-    if isinstance(data, dict):
-        scalar_lines = extract_scalar_lines(data)
-    else:
-        scalar_lines = extract_scalar_lines(payload) if isinstance(payload, dict) else []
+    data = payload.get("data", {})
+    inner = data.get("data", {}) if isinstance(data, dict) else {}
 
-    if scalar_lines:
+    totals = inner.get("totals", {}) if isinstance(inner, dict) else {}
+    top_section = inner.get("top", {}) if isinstance(inner, dict) else {}
+    by_connections = top_section.get("by_connections", []) if isinstance(top_section, dict) else []
+    by_throughput = top_section.get("by_throughput", []) if isinstance(top_section, dict) else []
+
+    if isinstance(totals, dict):
         top_lines.append("")
-        top_lines.append("<b>Кратко</b>")
-        for line in scalar_lines[:30]:
-            if ":" in line:
-                key, value = line.split(":", 1)
-                top_lines.append(f"{escape(key)}: <code>{escape(value.strip())}</code>")
-            else:
-                top_lines.append(f"<code>{escape(line)}</code>")
+        top_lines.append("<b>Totals</b>")
+        for key in ("current_connections", "current_connections_me",
+                    "current_connections_direct", "active_users"):
+            if key in totals:
+                top_lines.append(
+                    f"{escape(key)}: <code>{escape(str(totals[key]))}</code>"
+                )
+
+    if by_connections and isinstance(by_connections, list):
+        top_lines.append("")
+        top_lines.append("<b>Top by connections</b>")
+        for item in by_connections[:10]:
+            if not isinstance(item, dict):
+                continue
+            username = item.get("username", "")
+            conns = item.get("current_connections", 0) or 0
+            bytes_val = item.get("total_octets", 0) or 0
+            gib_val = bytes_val / (1024**3)
+            top_lines.append(
+                f"{escape(str(username))}: "
+                f"{conns} conns, "
+                f"{gib_val:.2f} GiB"
+            )
+
+    if by_throughput and isinstance(by_throughput, list):
+        top_lines.append("")
+        top_lines.append("<b>Top by throughput</b>")
+        for item in by_throughput[:10]:
+            if not isinstance(item, dict):
+                continue
+            username = item.get("username", "")
+            conns = item.get("current_connections", 0) or 0
+            bytes_val = item.get("total_octets", 0) or 0
+            gib_val = bytes_val / (1024**3)
+            top_lines.append(
+                f"{escape(str(username))}: "
+                f"{conns} conns, "
+                f"{gib_val:.2f} GiB"
+            )
 
     pretty_json = json.dumps(payload, ensure_ascii=False, indent=2)
     escaped_json = escape(pretty_json)
