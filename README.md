@@ -1,2 +1,2 @@
 # telemt-proxy
-Proxy fot telegram plus bot for convenient management
+Simple Telegram bot for teleMT API
