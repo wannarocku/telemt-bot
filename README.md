@@ -1,4 +1,4 @@
-# telemt-proxy
+# telemt-bot for Telegram
 
 Простой бот для Telegram, для управления telemt и просмотра метрик через API.
 
