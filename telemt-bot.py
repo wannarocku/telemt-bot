@@ -1,6 +1,7 @@
 import os
 import re
 import math
+import json
 import logging
 import traceback
 from html import escape
@@ -33,6 +34,7 @@ TELEMT_API_AUTH = os.getenv("TELEMT_API_AUTH", "")
 REQUEST_TIMEOUT = 5.0
 USERNAME_RE = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 USERS_PER_PAGE = 10
+TG_MESSAGE_LIMIT = 4000
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -65,7 +67,7 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("🗑 Удалить", callback_data="help:del"),
-            InlineKeyboardButton("❤️ Health", callback_data="health"),
+            InlineKeyboardButton("📊 Статистика", callback_data="stats"),
         ],
         [
             InlineKeyboardButton("🔄 Обновить меню", callback_data="main"),
@@ -181,6 +183,59 @@ def api_get_user(username: str) -> tuple[bool, dict | None, str | None]:
         return False, None, f"Ошибка получения пользователя: {e}"
 
 
+def extract_scalar_lines(obj: dict, prefix: str = "") -> list[str]:
+    lines = []
+    for key, value in obj.items():
+        name = f"{prefix}{key}"
+        if isinstance(value, dict):
+            lines.extend(extract_scalar_lines(value, prefix=f"{name}."))
+        elif isinstance(value, list):
+            if value and all(not isinstance(x, (dict, list)) for x in value):
+                lines.append(f"{name}: {', '.join(map(str, value[:10]))}")
+            else:
+                lines.append(f"{name}: [list, {len(value)}]")
+        else:
+            lines.append(f"{name}: {value}")
+    return lines
+
+
+def format_stats_message(payload: dict, http_status: int) -> str:
+    top_lines = [
+        "<b>Статистика runtime</b>",
+        f"HTTP: <code>{http_status}</code>",
+    ]
+
+    data = payload.get("data")
+    if isinstance(data, dict):
+        scalar_lines = extract_scalar_lines(data)
+    else:
+        scalar_lines = extract_scalar_lines(payload) if isinstance(payload, dict) else []
+
+    if scalar_lines:
+        top_lines.append("")
+        top_lines.append("<b>Кратко</b>")
+        for line in scalar_lines[:30]:
+            if ":" in line:
+                key, value = line.split(":", 1)
+                top_lines.append(f"{escape(key)}: <code>{escape(value.strip())}</code>")
+            else:
+                top_lines.append(f"<code>{escape(line)}</code>")
+
+    pretty_json = json.dumps(payload, ensure_ascii=False, indent=2)
+    escaped_json = escape(pretty_json)
+
+    reserved_len = len("\n".join(top_lines)) + 50
+    max_pre_len = max(500, TG_MESSAGE_LIMIT - reserved_len)
+    if len(escaped_json) > max_pre_len:
+        escaped_json = escaped_json[:max_pre_len] + "\n... (обрезано)"
+
+    top_lines.append("")
+    top_lines.append("<b>JSON</b>")
+    top_lines.append(f"<pre>{escaped_json}</pre>")
+
+    return "\n".join(top_lines)
+
+
 async def safe_edit_or_send(
     query,
     text: str,
@@ -210,6 +265,7 @@ async def post_init(application: Application) -> None:
     await application.bot.set_my_commands([
         BotCommand("start", "Показать главное меню"),
         BotCommand("help", "Справка по боту"),
+        BotCommand("stats", "Статистика runtime"),
     ])
     await application.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
 
@@ -227,29 +283,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/new <username> — создать пользователя\n"
         "/link <username> — показать только ссылки\n"
         "/del <username> — удалить пользователя\n"
-        "/health — проверка API"
+        "/stats — статистика runtime"
     )
     await update.message.reply_text(text, reply_markup=main_menu_keyboard())
-
-
-async def health(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await guard(update):
-        return
-    try:
-        r = requests.get(
-            f"{TELEMT_BASE_URL}/health",
-            headers=telemt_headers(),
-            timeout=REQUEST_TIMEOUT,
-        )
-        await update.message.reply_text(
-            f"HTTP {r.status_code}\n{r.json()}",
-            reply_markup=only_home_keyboard(),
-        )
-    except Exception as e:
-        await update.message.reply_text(
-            f"Ошибка health-check: {e}",
-            reply_markup=only_home_keyboard(),
-        )
 
 
 async def users(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -272,6 +308,32 @@ async def users(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Выбери пользователя:",
         reply_markup=build_users_keyboard(items, page=0),
     )
+
+
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await guard(update):
+        return
+
+    try:
+        r = requests.get(
+            f"{TELEMT_BASE_URL}/runtime/connections/summary",
+            headers=telemt_headers(),
+            timeout=REQUEST_TIMEOUT,
+        )
+        payload = r.json()
+        text = format_stats_message(payload, r.status_code)
+
+        await update.message.reply_text(
+            text,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+            reply_markup=only_home_keyboard(),
+        )
+    except Exception as e:
+        await update.message.reply_text(
+            f"Ошибка получения статистики: {e}",
+            reply_markup=only_home_keyboard(),
+        )
 
 
 async def new_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -478,21 +540,24 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if data == "health":
+    if data == "stats":
         try:
             r = requests.get(
-                f"{TELEMT_BASE_URL}/health",
+                f"{TELEMT_BASE_URL}/runtime/connections/summary",
                 headers=telemt_headers(),
                 timeout=REQUEST_TIMEOUT,
             )
-            text = f"Health-check\n\nHTTP {r.status_code}\n{r.json()}"
+            payload = r.json()
+            text = format_stats_message(payload, r.status_code)
         except Exception as e:
-            text = f"Ошибка health-check: {e}"
+            text = f"Ошибка получения статистики: {e}"
 
         await safe_edit_or_send(
             query,
             text,
             reply_markup=only_home_keyboard(),
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
         )
         return
 
@@ -677,7 +742,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", start))
-    app.add_handler(CommandHandler("health", health))
+    app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("users", users))
     app.add_handler(CommandHandler("new", new_user))
     app.add_handler(CommandHandler("user", user_info))
