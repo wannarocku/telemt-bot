@@ -1,8 +1,10 @@
 # telemt-proxy
-Простой бот для телеграма, для управления telemt и просмотра метрик через API
 
-Для функционирования бота из коробки в конфиге telemt должны быть указаны следующий параметры:
+Простой бот для Telegram, для управления telemt и просмотра метрик через API.
 
+Для функционирования бота из коробки в конфиге `telemt.toml` должны быть указаны следующие параметры:
+
+```toml
 [server.api]
 enabled = true
 listen = "127.0.0.1:9091"
@@ -13,7 +15,9 @@ runtime_edge_enabled = true       # ← включаем детальные runt
 core_enabled = true
 user_enabled = true
 me_level = "normal"
-
-а в .service unit-файле:
+```
+А в .service unit-файле:
+```ini
 AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_NET_ADMIN
+```
