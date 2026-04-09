@@ -21,3 +21,11 @@ me_level = "normal"
 AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_NET_ADMIN
 ```
+Также необходимо заполнить .env:
+```ini
+BOT_TOKEN=
+ADMIN_IDS=
+TELEMT_BASE_URL=
+TELEMT_AUTH_HEADER=
+REQUEST_TIMEOUT=15
+```
