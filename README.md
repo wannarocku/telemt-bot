@@ -1,6 +1,6 @@
 # telemt-bot for Telegram
 
-Простой бот для Telegram, для управления telemt и просмотра метрик через API.
+Простой бот для Telegram, для управления telemt (https://github.com/telemt/telemt) и просмотра метрик через API.
 
 Для функционирования бота из коробки в конфиге `telemt.toml` должны быть указаны следующие параметры:
 
