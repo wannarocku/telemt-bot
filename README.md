@@ -9,7 +9,7 @@
 
 ---
 
-## Требования
+## Требования:
 
 - Установленный и настроенный `telemt` с включённым API.
 - Linux‑хост с systemd.
@@ -18,7 +18,7 @@
 
 ---
 
-## Настройка telemt
+## Настройка telemt:
 
 В `telemt.toml` должны быть включены API и runtime‑метрики:
 
@@ -44,7 +44,7 @@ CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_NET_ADMIN
 
 ---
 
-## Переменные окружения (.env)
+## Переменные окружения (.env):
 
 При установке скрипт `install.sh` создаёт файл `.env` рядом с ботом (`/opt/telemt-bot/.env`).  
 После установки обязательно открой его и заполни нужными значениями:
@@ -66,17 +66,14 @@ REQUEST_TIMEOUT=5
 - `REQUEST_TIMEOUT` — таймаут HTTP‑запросов к API telemt в секундах (по умолчанию 5)
 ---
 
-## Установка
+## Установка:
 
 ```bash
-wget https://github.com/wannarocku/telemt-bot/archive/refs/heads/dev.zip -O telemt-bot-dev.zip
-unzip telemt-bot-dev.zip
-cd telemt-bot-dev
+wget https://github.com/wannarocku/telemt-bot/archive/refs/heads/main.zip -O telemt-bot-main.zip
+unzip telemt-bot-main.zip &&
+cd telemt-bot-main &&
 chmod +x install.sh
 ```
-
-Дальше:
-
 1. Запусти установку:
    ```bash
    sudo ./install.sh
@@ -94,43 +91,9 @@ chmod +x install.sh
 sudo systemctl status telemt-bot
 journalctl -u telemt-bot -f
 ```
-
 ---
 
-## Обновление
-
-Типичный сценарий обновления с dev‑ветки:
-
-```bash
-# Остановить текущий сервис и удалить старые файлы
-sudo systemctl stop telemt-bot
-sudo systemctl disable telemt-bot
-sudo rm -f /etc/systemd/system/telemt-bot.service
-sudo systemctl daemon-reload
-sudo rm -rf /opt/telemt-bot
-
-# Скачать и установить свежую dev‑версию
-wget https://github.com/wannarocku/telemt-bot/archive/refs/heads/dev.zip -O telemt-bot-dev.zip
-unzip telemt-bot-dev.zip
-cd telemt-bot-dev
-chmod +x install.sh
-
-# Не забыть сверить/обновить .env
-sudo ./install.sh
-```
-
-После установки:
-
-```bash
-sudo systemctl enable telemt-bot
-sudo systemctl start telemt-bot
-```
-
----
-
-## Удаление
-
-Полностью убрать бота можно так:
+## Удаление:
 
 ```bash
 sudo systemctl stop telemt-bot
@@ -140,11 +103,9 @@ sudo systemctl daemon-reload
 sudo rm -rf /opt/telemt-bot
 ```
 
-После этого сервис и файлы бота будут удалены.
-
 ---
 
-## Основные возможности бота
+## Основные возможности бота:
 
 В Telegram (для администратора из `ADMIN_IDS`) доступны команды:
 
@@ -165,8 +126,9 @@ sudo rm -rf /opt/telemt-bot
 
 ---
 
-## Тонкости
+## Моменты:
 
 - Бот работает только для Telegram‑ID из `ADMIN_IDS`, для остальных отвечает «Доступ запрещён».
 - Все запросы к API telemt идут на `TELEMT_BASE_URL` с заголовком `Authorization: TELEMT_API_AUTH` (если он задан).
 - Для корректной статистики нужны включённые `minimal_runtime_enabled` и `runtime_edge_enabled` в конфиге telemt.
+- Скрипт установки создаёт пользователя telemt под которым будет работать служба `telemt-bot.service`
