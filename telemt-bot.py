@@ -2,10 +2,12 @@ import os
 import re
 import math
 import json
+import io
 import logging
 import traceback
 from html import escape
 
+import qrcode
 import requests
 from dotenv import load_dotenv
 from telegram import (
@@ -59,6 +61,33 @@ def telemt_headers() -> dict:
     return headers
 
 
+def get_tls_link(links: dict) -> str | None:
+    if not isinstance(links, dict):
+        return None
+    tls_links = links.get("tls", [])
+    if isinstance(tls_links, list) and tls_links:
+        return tls_links[0]
+    return None
+
+
+def build_qr_bytes(data: str) -> io.BytesIO:
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+
+    img = qr.make_image(fill_color="black", back_color="white")
+    bio = io.BytesIO()
+    img.save(bio, format="PNG")
+    bio.seek(0)
+    bio.name = "telemt-user-qr.png"
+    return bio
+
+
 def main_menu_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
         [
@@ -95,6 +124,7 @@ def user_actions_keyboard(username: str, back_page: int = 0) -> InlineKeyboardMa
         [
             InlineKeyboardButton("🧾 Информация", callback_data=f"info:{username}:{back_page}"),
             InlineKeyboardButton("🔎 Ссылка", callback_data=f"links:{username}:{back_page}"),
+            InlineKeyboardButton("📷 QR", callback_data=f"qr:{username}:{back_page}"),
         ],
         [
             InlineKeyboardButton("⬅ Назад к списку", callback_data=f"users:{back_page}"),
@@ -216,8 +246,12 @@ def format_stats_message(payload: dict, http_status: int) -> str:
     if isinstance(totals, dict):
         top_lines.append("")
         top_lines.append("<b>Totals</b>")
-        for key in ("current_connections", "current_connections_me",
-                    "current_connections_direct", "active_users"):
+        for key in (
+            "current_connections",
+            "current_connections_me",
+            "current_connections_direct",
+            "active_users",
+        ):
             if key in totals:
                 top_lines.append(
                     f"{escape(key)}: <code>{escape(str(totals[key]))}</code>"
@@ -232,11 +266,9 @@ def format_stats_message(payload: dict, http_status: int) -> str:
             username = item.get("username", "")
             conns = item.get("current_connections", 0) or 0
             bytes_val = item.get("total_octets", 0) or 0
-            gib_val = bytes_val / (1024**3)
+            gib_val = bytes_val / (1024 ** 3)
             top_lines.append(
-                f"{escape(str(username))}: "
-                f"{conns} conns, "
-                f"{gib_val:.2f} GiB"
+                f"{escape(str(username))}: {conns} conns, {gib_val:.2f} GiB"
             )
 
     if by_throughput and isinstance(by_throughput, list):
@@ -248,11 +280,9 @@ def format_stats_message(payload: dict, http_status: int) -> str:
             username = item.get("username", "")
             conns = item.get("current_connections", 0) or 0
             bytes_val = item.get("total_octets", 0) or 0
-            gib_val = bytes_val / (1024**3)
+            gib_val = bytes_val / (1024 ** 3)
             top_lines.append(
-                f"{escape(str(username))}: "
-                f"{conns} conns, "
-                f"{gib_val:.2f} GiB"
+                f"{escape(str(username))}: {conns} conns, {gib_val:.2f} GiB"
             )
 
     pretty_json = json.dumps(payload, ensure_ascii=False, indent=2)
@@ -409,7 +439,6 @@ async def new_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = payload.get("user", {})
         links = user.get("links", {})
         tls_links = links.get("tls", [])
-        secure_links = links.get("secure", [])
         secret = payload.get("secret", "(не вернулся в ответе)")
 
         parts = [
@@ -419,8 +448,6 @@ async def new_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if tls_links:
             parts.append("TLS:\n" + "\n".join(f"<code>{escape(x)}</code>" for x in tls_links[:5]))
-        if secure_links:
-            parts.append("Secure:\n" + "\n".join(f"<code>{escape(x)}</code>" for x in secure_links[:5]))
 
         await update.message.reply_text(
             "\n\n".join(parts),
@@ -428,6 +455,19 @@ async def new_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             disable_web_page_preview=True,
             reply_markup=only_home_keyboard(),
         )
+
+        tls_link = tls_links[0] if tls_links else None
+        if tls_link:
+            qr_bytes = build_qr_bytes(tls_link)
+            await update.message.reply_photo(
+                photo=qr_bytes,
+                caption=(
+                    f"<b>{escape(user.get('username', username))}</b>\n"
+                    f"TLS:\n<code>{escape(tls_link)}</code>"
+                ),
+                parse_mode=ParseMode.HTML,
+                reply_markup=only_home_keyboard(),
+            )
     except Exception as e:
         await update.message.reply_text(
             f"Ошибка создания пользователя: {e}",
@@ -458,9 +498,7 @@ async def user_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Connections: <code>{u.get('current_connections')}</code>\n"
         f"Unique IPs: <code>{u.get('active_unique_ips')}</code>\n"
         f"Total octets: <code>{u.get('total_octets')}</code>\n\n"
-        f"TLS links: <code>{len(links.get('tls', []))}</code>\n"
-        f"Secure links: <code>{len(links.get('secure', []))}</code>\n"
-        f"Classic links: <code>{len(links.get('classic', []))}</code>"
+        f"TLS links: <code>{len(links.get('tls', []))}</code>"
     )
     await update.message.reply_text(
         msg,
@@ -487,14 +525,11 @@ async def link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     links = u.get("links", {})
-    parts = []
-    for label in ("tls", "secure", "classic"):
-        arr = links.get(label, [])
-        if arr:
-            parts.append(label.upper() + ":\n" + "\n".join(arr[:10]))
+    tls_links = links.get("tls", [])
+    text = "TLS:\n" + "\n".join(tls_links[:10]) if tls_links else "Ссылок TLS нет."
 
     await update.message.reply_text(
-        "\n\n".join(parts) if parts else "Ссылок нет.",
+        text,
         disable_web_page_preview=True,
         reply_markup=only_home_keyboard(),
     )
@@ -685,9 +720,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Connections: <code>{u.get('current_connections')}</code>\n"
             f"Unique IPs: <code>{u.get('active_unique_ips')}</code>\n"
             f"Total octets: <code>{u.get('total_octets')}</code>\n\n"
-            f"TLS links: <code>{len(links.get('tls', []))}</code>\n"
-            f"Secure links: <code>{len(links.get('secure', []))}</code>\n"
-            f"Classic links: <code>{len(links.get('classic', []))}</code>"
+            f"TLS links: <code>{len(links.get('tls', []))}</code>"
         )
         await safe_edit_or_send(
             query,
@@ -723,18 +756,59 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         links = u.get("links", {})
-        parts_out = []
-        for label in ("tls", "secure", "classic"):
-            arr = links.get(label, [])
-            if arr:
-                parts_out.append(f"{label.upper()}:\n" + "\n".join(arr[:10]))
-
-        text = "\n\n".join(parts_out) if parts_out else "Ссылок нет."
+        tls_links = links.get("tls", [])
+        text = "TLS:\n" + "\n".join(tls_links[:10]) if tls_links else "Ссылок TLS нет."
         await safe_edit_or_send(
             query,
             text,
             reply_markup=user_actions_keyboard(username, back_page),
             disable_web_page_preview=True,
+        )
+        return
+
+    if data.startswith("qr:"):
+        parts = data.split(":")
+        if len(parts) < 3:
+            await safe_edit_or_send(
+                query,
+                "Некорректные данные кнопки.",
+                reply_markup=only_home_keyboard(),
+            )
+            return
+
+        username = parts[1]
+        try:
+            back_page = int(parts[2])
+        except Exception:
+            back_page = 0
+
+        ok, u, err = api_get_user(username)
+        if not ok:
+            await safe_edit_or_send(
+                query,
+                err,
+                reply_markup=user_actions_keyboard(username, back_page),
+            )
+            return
+
+        links = u.get("links", {})
+        tls_link = get_tls_link(links)
+        if not tls_link:
+            await query.message.reply_text(
+                "У пользователя нет TLS-ссылки.",
+                reply_markup=user_actions_keyboard(username, back_page),
+            )
+            return
+
+        qr_bytes = build_qr_bytes(tls_link)
+        await query.message.reply_photo(
+            photo=qr_bytes,
+            caption=(
+                f"<b>{escape(username)}</b>\n"
+                f"TLS:\n<code>{escape(tls_link)}</code>"
+            ),
+            parse_mode=ParseMode.HTML,
+            reply_markup=user_actions_keyboard(username, back_page),
         )
         return
 
