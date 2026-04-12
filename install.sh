@@ -20,7 +20,7 @@ fi
 
 mkdir -p "$APP_DIR"
 
-cp -a . "$APP_DIR/.."
+cp -a ./. "$APP_DIR"/
 chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
 cd "$APP_DIR"
 
