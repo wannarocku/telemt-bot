@@ -32,8 +32,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 ADMIN_IDS_RAW = os.getenv("ADMIN_IDS", "")
 TELEMT_BASE_URL = os.getenv("TELEMT_API_BASE", "http://127.0.0.1:9091/v1")
 TELEMT_API_AUTH = os.getenv("TELEMT_API_AUTH", "")
-
-REQUEST_TIMEOUT = 5.0
+REQUEST_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "5"))
 USERNAME_RE = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 USERS_PER_PAGE = 10
 TG_MESSAGE_LIMIT = 4000
