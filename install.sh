@@ -3,49 +3,63 @@ set -e
 
 APP_DIR=/opt/telemt-bot
 SERVICE_USER=telemt
+SERVICE_NAME=telemt-bot
+BOT_FILE=telemt-bot-qr.py
+
+GREEN='\033[0;32m'
+NC='\033[0m'
 
 echo "=== Установка TeleMT-bot ==="
 
-# Установка зависимостей
 apt update
 apt install -y python3 python3-venv python3-pip git nano
 
-# Создание пользователя telemt, если ещё нет
 if ! id "$SERVICE_USER" &>/dev/null; then
     echo "Создаём системного пользователя $SERVICE_USER..."
-    useradd -m -r -U -d $APP_DIR -s /usr/sbin/nologin $SERVICE_USER
+    useradd -m -r -U -d "$APP_DIR" -s /usr/sbin/nologin "$SERVICE_USER"
+else
+    echo "Пользователь $SERVICE_USER уже существует, продолжаем."
 fi
 
-# Развёртывание бота
-mkdir -p $APP_DIR
-cp -r ./* $APP_DIR
-chown -R $SERVICE_USER:$SERVICE_USER $APP_DIR
-cd $APP_DIR
+mkdir -p "$APP_DIR"
 
-# Виртуальное окружение
+cp -a ./. "$APP_DIR"/
+chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
+cd "$APP_DIR"
+
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+"$APP_DIR/.venv/bin/python" -m pip install --upgrade pip
+"$APP_DIR/.venv/bin/python" -m pip install -r "$APP_DIR/requirements.txt"
 
-# Создание .env, если его нет
-if [ ! -f .env ]; then
-    cat <<EOF >.env
-TELEGRAM_TOKEN=
-ADMIN_ID=
-OTHER_SETTING=
+if [ ! -f "$APP_DIR/.env" ]; then
+    cat <<EOF > "$APP_DIR/.env"
+# Telegram BOT token you may get from @BotFather
+BOT_TOKEN=
+
+# BOT admin ID you may get from @Getmyid_bot
+ADMIN_IDS=
+
+# Telemt API should listen that IP (default is localhost)
+TELEMT_API_BASE=http://127.0.0.1:9091/v1
+
+# If you need secure 'talk' with telemt API
+TELEMT_API_AUTH=
+
+# How long will request wait for API to respond (default is 5)
+REQUEST_TIMEOUT=5
 EOF
-    echo "Создан файл $APP_DIR/.env. Пожалуйста, заполните переменные перед запуском бота."
+    chown "$SERVICE_USER:$SERVICE_USER" "$APP_DIR/.env"
+    chmod 600 "$APP_DIR/.env"
 fi
 
-# Определяем Python-скрипт бота (берём первый *.py в папке)
-BOT_FILE=$(ls $APP_DIR | grep '\.py$' | head -n1)
-if [ -z "$BOT_FILE" ]; then
-    echo "Ошибка: не найден Python-скрипт бота (*.py) в $APP_DIR"
+if [ ! -f "$APP_DIR/$BOT_FILE" ]; then
+    echo "Ошибка: не найден Python-скрипт бота: $APP_DIR/$BOT_FILE"
     exit 1
 fi
+
 echo "Используем скрипт $BOT_FILE для запуска сервиса"
 
-# systemd unit
-cat <<EOF >/etc/systemd/system/telemt-bot.service
+cat <<EOF >/etc/systemd/system/$SERVICE_NAME.service
 [Unit]
 Description=teleMT Telegram Bot
 Wants=network-online.target
@@ -67,8 +81,16 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable telemt-bot
-systemctl restart telemt-bot
-systemctl status telemt-bot
+systemctl enable "$SERVICE_NAME"
 
-echo "=== Установка TeleMT-bot завершена ==="
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}TeleMT-bot успешно установлен.${NC}"
+echo -e "${GREEN}Имя службы: $SERVICE_NAME${NC}"
+echo -e "${GREEN}Файл конфигурации: $APP_DIR/.env${NC}"
+echo -e "${GREEN}Сейчас откроется .env для заполнения.${NC}"
+echo -e "${GREEN}После заполнения запусти службу командами и проверь её статус после запуска:${NC}"
+echo -e "${GREEN}systemctl start $SERVICE_NAME${NC}"
+echo -e "${GREEN}systemctl status $SERVICE_NAME --no-pager${NC}"
+echo -e "${GREEN}========================================${NC}"
+
+nano "$APP_DIR/.env"

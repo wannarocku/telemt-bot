@@ -1,31 +1,172 @@
 # telemt-bot for Telegram
 
-Простой бот для Telegram, для управления telemt (https://github.com/telemt/telemt) и просмотра метрик через API.
+Простой Telegram‑бот для управления [telemt](https://github.com/telemt/telemt) и просмотра метрик через его HTTP API.  
+Позволяет:
+- получать список пользователей, их статистику и ссылки;
+- создавать и удалять пользователей;
+- смотреть runtime‑метрики (Totals, Top by connections / throughput);
+- генерировать QR‑коды для TLS‑ссылок.
 
-Для функционирования бота из коробки в конфиге `telemt.toml` должны быть указаны следующие параметры:
+---
+
+## Требования
+
+- Установленный и настроенный `telemt` с включённым API.
+- Linux‑хост с systemd.
+- Python 3 (если бот устанавливается из исходников).
+- Доступ к интернету для работы с Telegram API.
+
+---
+
+## Настройка telemt
+
+В `telemt.toml` должны быть включены API и runtime‑метрики:
 
 ```toml
 [server.api]
 enabled = true
-listen = "127.0.0.1:9091"
-minimal_runtime_enabled = true    # ← включаем snapshot runtime
-runtime_edge_enabled = true       # ← включаем детальные runtime метрики (топ соединений, пользователей)
+listen = "127.0.0.1:9091"         # в примере API слушает localhost
+minimal_runtime_enabled = true    # включаем snapshot runtime
+runtime_edge_enabled = true       # включаем детальные runtime-метрики (топ соединений, пользователей)
 
 [general.telemetry]
 core_enabled = true
 user_enabled = true
 me_level = "normal"
 ```
-А в .service unit-файле:
+
+В unit‑файле сервиса `telemt` должны быть права:
+
 ```ini
 AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_NET_ADMIN
 ```
-Также необходимо заполнить .env:
+
+---
+
+## Переменные окружения (.env)
+
+При установке скрипт `install.sh` создаёт файл `.env` рядом с ботом (`/opt/telemt-bot/.env`).  
+После установки обязательно открой его и заполни нужными значениями:
+
 ```ini
 BOT_TOKEN=
 ADMIN_IDS=
-TELEMT_BASE_URL=
-TELEMT_AUTH_HEADER=
-REQUEST_TIMEOUT=15
+TELEMT_BASE_URL=http://127.0.0.1:9091/v1
+TELEMT_API_AUTH=
+REQUEST_TIMEOUT=5
 ```
+
+Где:
+
+- `BOT_TOKEN` — токен бота от @BotFather.  
+- `ADMIN_IDS` — список Telegram ID админов, через запятую.  
+- `TELEMT_BASE_URL` — URL API telemt (в примере `http://127.0.0.1:9091/v1`).  
+- `TELEMT_API_AUTH` — значение заголовка Authorization (если нужен), иначе можно оставить пустым.  
+- `REQUEST_TIMEOUT` — таймаут HTTP‑запросов к API telemt в секундах (по умолчанию 5)
+---
+
+## Установка
+
+```bash
+wget https://github.com/wannarocku/telemt-bot/archive/refs/heads/dev.zip -O telemt-bot-dev.zip
+unzip telemt-bot-dev.zip
+cd telemt-bot-dev
+chmod +x install.sh
+```
+
+Дальше:
+
+1. Запусти установку:
+   ```bash
+   sudo ./install.sh
+   ```
+2. Отредактируй `.env`.
+
+3. Запусти сервис:
+   ```bash
+   sudo systemctl start telemt-bot
+   ```
+
+Проверка статуса:
+
+```bash
+sudo systemctl status telemt-bot
+journalctl -u telemt-bot -f
+```
+
+---
+
+## Обновление
+
+Типичный сценарий обновления с dev‑ветки:
+
+```bash
+# Остановить текущий сервис и удалить старые файлы
+sudo systemctl stop telemt-bot
+sudo systemctl disable telemt-bot
+sudo rm -f /etc/systemd/system/telemt-bot.service
+sudo systemctl daemon-reload
+sudo rm -rf /opt/telemt-bot
+
+# Скачать и установить свежую dev‑версию
+wget https://github.com/wannarocku/telemt-bot/archive/refs/heads/dev.zip -O telemt-bot-dev.zip
+unzip telemt-bot-dev.zip
+cd telemt-bot-dev
+chmod +x install.sh
+
+# Не забыть сверить/обновить .env
+sudo ./install.sh
+```
+
+После установки:
+
+```bash
+sudo systemctl enable telemt-bot
+sudo systemctl start telemt-bot
+```
+
+---
+
+## Удаление
+
+Полностью убрать бота можно так:
+
+```bash
+sudo systemctl stop telemt-bot
+sudo systemctl disable telemt-bot
+sudo rm -f /etc/systemd/system/telemt-bot.service
+sudo systemctl daemon-reload
+sudo rm -rf /opt/telemt-bot
+```
+
+После этого сервис и файлы бота будут удалены.
+
+---
+
+## Основные возможности бота
+
+В Telegram (для администратора из `ADMIN_IDS`) доступны команды:
+
+- `/start` — главное меню бота.
+- `/users` — список пользователей telemt.
+- `/user <username>` — краткая информация по конкретному пользователю.
+- `/new <username>` — создать пользователя (с выводом Secret, TLS‑ссылки и QR‑кода).
+- `/link <username>` — вывести TLS‑ссылки пользователя.
+- `/del <username>` — удалить пользователя.
+- `/stats` — показать runtime‑статистику (Totals, топ по соединениям и трафику).
+
+Через inline‑меню:
+
+- просмотр списка пользователей с пагинацией;
+- просмотр информации по пользователю;
+- получение ссылок;
+- получение QR‑кода для TLS‑ссылки.
+
+---
+
+## Тонкости
+
+- Бот работает только для Telegram‑ID из `ADMIN_IDS`, для остальных отвечает «Доступ запрещён».
+- Все запросы к API telemt идут на `TELEMT_BASE_URL` с заголовком `Authorization: TELEMT_API_AUTH` (если он задан).
+- Для корректной статистики нужны включённые `minimal_runtime_enabled` и `runtime_edge_enabled` в конфиге telemt.
