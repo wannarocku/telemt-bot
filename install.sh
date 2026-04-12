@@ -3,49 +3,51 @@ set -e
 
 APP_DIR=/opt/telemt-bot
 SERVICE_USER=telemt
+SERVICE_NAME=telemt-bot
+BOT_FILE=telemt-bot-qr.py
 
 echo "=== Установка TeleMT-bot ==="
 
-# Установка зависимостей
 apt update
 apt install -y python3 python3-venv python3-pip git nano
 
-# Создание пользователя telemt, если ещё нет
 if ! id "$SERVICE_USER" &>/dev/null; then
     echo "Создаём системного пользователя $SERVICE_USER..."
-    useradd -m -r -U -d $APP_DIR -s /usr/sbin/nologin $SERVICE_USER
+    useradd -m -r -U -d "$APP_DIR" -s /usr/sbin/nologin "$SERVICE_USER"
+else
+    echo "Пользователь $SERVICE_USER уже существует, продолжаем."
 fi
 
-# Развёртывание бота
-mkdir -p $APP_DIR
-cp -r ./* $APP_DIR
-chown -R $SERVICE_USER:$SERVICE_USER $APP_DIR
-cd $APP_DIR
+mkdir -p "$APP_DIR"
 
-# Виртуальное окружение
+cp -a . "$APP_DIR/.."
+chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
+cd "$APP_DIR"
+
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+"$APP_DIR/.venv/bin/python" -m pip install --upgrade pip
+"$APP_DIR/.venv/bin/python" -m pip install -r requirements.txt
 
-# Создание .env, если его нет
 if [ ! -f .env ]; then
-    cat <<EOF >.env
-TELEGRAM_TOKEN=
-ADMIN_ID=
-OTHER_SETTING=
+    cat <<EOF > .env
+BOT_TOKEN=
+ADMIN_IDS=
+TELEMT_API_BASE=http://127.0.0.1:9091/v1
+TELEMT_API_AUTH=
 EOF
-    echo "Создан файл $APP_DIR/.env. Пожалуйста, заполните переменные перед запуском бота."
+    chown "$SERVICE_USER:$SERVICE_USER" .env
+    chmod 600 .env
+    echo "Создан файл $APP_DIR/.env. Заполни переменные перед запуском бота."
 fi
 
-# Определяем Python-скрипт бота (берём первый *.py в папке)
-BOT_FILE=$(ls $APP_DIR | grep '\.py$' | head -n1)
-if [ -z "$BOT_FILE" ]; then
-    echo "Ошибка: не найден Python-скрипт бота (*.py) в $APP_DIR"
+if [ ! -f "$APP_DIR/$BOT_FILE" ]; then
+    echo "Ошибка: не найден Python-скрипт бота: $APP_DIR/$BOT_FILE"
     exit 1
 fi
+
 echo "Используем скрипт $BOT_FILE для запуска сервиса"
 
-# systemd unit
-cat <<EOF >/etc/systemd/system/telemt-bot.service
+cat <<EOF >/etc/systemd/system/$SERVICE_NAME.service
 [Unit]
 Description=teleMT Telegram Bot
 Wants=network-online.target
@@ -67,8 +69,8 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable telemt-bot
-systemctl restart telemt-bot
-systemctl status telemt-bot
+systemctl enable "$SERVICE_NAME"
+systemctl restart "$SERVICE_NAME"
+systemctl status "$SERVICE_NAME" --no-pager
 
 echo "=== Установка TeleMT-bot завершена ==="
